@@ -172,10 +172,6 @@ async function initializeDatabase() {
       )
     `);
 
-    // Drop child tables first (to avoid foreign key constraint issues)
-    await connection.execute(`DROP TABLE IF EXISTS query_history`);
-    await connection.execute(`DROP TABLE IF EXISTS database_connections`);
-    
     // Create database connections table (to store user's favorite connections)
     await connection.execute(`
       CREATE TABLE IF NOT EXISTS database_connections (
