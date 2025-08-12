@@ -331,14 +331,23 @@ async function initializeDatabase() {
     // Create default admin user if not exists
     const bcrypt = require('bcryptjs');
     const adminPassword = await bcrypt.hash('admin123', 10);
+    const userPassword = await bcrypt.hash('user123', 10);
     
+    // Create default admin user
     await connection.execute(`
       INSERT IGNORE INTO users (username, email, password, full_name, role) 
       VALUES ('admin', 'admin@sqleditor.com', ?, 'System Administrator', 'admin')
     `, [adminPassword]);
 
+    // Create default regular user
+    await connection.execute(`
+      INSERT IGNORE INTO users (username, email, password, full_name, role) 
+      VALUES ('user', 'user@sqleditor.com', ?, 'Regular User', 'user')
+    `, [userPassword]);
+
     console.log('Database tables created successfully');
     console.log('Default admin user created: admin/admin123');
+    console.log('Default regular user created: user/user123');
     console.log('Default approval patterns created');
 
     // Create system settings table
@@ -384,6 +393,59 @@ async function initializeDatabase() {
     }
 
     console.log('Default system settings created');
+
+    // Add default MariaDB connection for admin user
+    try {
+      const [adminUser] = await connection.execute(
+        'SELECT id FROM users WHERE username = ? LIMIT 1',
+        ['admin']
+      );
+
+      if (adminUser.length > 0) {
+        const adminUserId = adminUser[0].id;
+        
+        // Check if MariaDB connection already exists
+        const [existingConn] = await connection.execute(
+          'SELECT id FROM database_connections WHERE user_id = ? AND name = ? LIMIT 1',
+          [adminUserId, 'Local MariaDB']
+        );
+
+        if (existingConn.length === 0) {
+          await connection.execute(`
+            INSERT INTO database_connections (user_id, name, type, host, port, username, password, database_name, use_ssl) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `, [adminUserId, 'Local MariaDB', 'mysql', 'localhost', 3306, 'root', '', 'test', 0]);
+          
+          console.log('Default MariaDB connection created');
+        }
+
+        // Add sample database connection for user
+        const [regularUser] = await connection.execute(
+          'SELECT id FROM users WHERE username = ? LIMIT 1',
+          ['user']
+        );
+
+        if (regularUser.length > 0) {
+          const regularUserId = regularUser[0].id;
+          
+          const [existingUserConn] = await connection.execute(
+            'SELECT id FROM database_connections WHERE user_id = ? AND name = ? LIMIT 1',
+            [regularUserId, 'Local MariaDB']
+          );
+
+          if (existingUserConn.length === 0) {
+            await connection.execute(`
+              INSERT INTO database_connections (user_id, name, type, host, port, username, password, database_name, use_ssl) 
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `, [regularUserId, 'Local MariaDB', 'mysql', 'localhost', 3306, 'root', '', 'test', 0]);
+            
+            console.log('Default MariaDB connection created for user');
+          }
+        }
+      }
+    } catch (error) {
+      console.log('Error creating default MariaDB connections:', error.message);
+    }
     
   } catch (error) {
     console.error('Database initialization error:', error);

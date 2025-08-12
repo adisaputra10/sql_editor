@@ -240,14 +240,16 @@ router.post('/execute', requireAuth, async (req, res) => {
                               finalQuery.toUpperCase().trim().startsWith('EXPLAIN');
               
               if (isSelect) {
-                const maskedData = enableMasking ? maskSensitiveData(rows, fields) : rows;
+                // Admin tidak di-mask, hanya user biasa yang di-mask
+                const shouldMask = enableMasking && userRole !== 'admin';
+                const maskedData = shouldMask ? maskSensitiveData(rows, fields) : rows;
                 const resultData = {
                   query: singleQuery, // Show original query to user
                   data: maskedData,
                   fields: fields ? fields.map(f => ({ name: f.name, type: f.type })) : [],
                   rowCount: rows.length,
                   executionTime: queryExecutionTime,
-                  masked: enableMasking && maskedData !== rows // Indicate if data was masked
+                  masked: shouldMask && maskedData !== rows // Indicate if data was masked
                 };
                 
                 // Add limit notice for non-admin users
@@ -304,6 +306,12 @@ router.post('/execute', requireAuth, async (req, res) => {
         
         dbConnection = new DynamicPostgreSQLConnection(config);
         
+        console.log('PostgreSQL Query execution:', {
+          query: query,
+          database: database || connConfig.database_name,
+          connection: `${connConfig.host}:${connConfig.port}`
+        });
+        
         const client = await dbConnection.getConnection();
         
         // Split query by semicolon and execute each statement
@@ -326,14 +334,16 @@ router.post('/execute', requireAuth, async (req, res) => {
               length: field.dataTypeSize
             })) : [];
             
-            const maskedData = enableMasking ? maskSensitiveData(pgResult.rows, columns) : pgResult.rows;
+            // Admin tidak di-mask, hanya user biasa yang di-mask
+            const shouldMask = enableMasking && userRole !== 'admin';
+            const maskedData = shouldMask ? maskSensitiveData(pgResult.rows, columns) : pgResult.rows;
             allResults.push({
               query: singleQuery,
               columns: columns,
               data: maskedData,
               rowCount: pgResult.rows.length,
               executionTime: queryExecutionTime,
-              masked: enableMasking && maskedData !== pgResult.rows // Indicate if data was masked
+              masked: shouldMask && maskedData !== pgResult.rows // Indicate if data was masked
             });
           } else {
             // INSERT, UPDATE, DELETE, etc.
@@ -357,6 +367,14 @@ router.post('/execute', requireAuth, async (req, res) => {
     } catch (queryError) {
       success = false;
       errorMessage = queryError.message;
+      console.error('Query execution error:', {
+        error: queryError.message,
+        code: queryError.code,
+        query: query,
+        database: database,
+        connectionType: connConfig.type,
+        stack: queryError.stack
+      });
       result = {
         error: queryError.message,
         code: queryError.code || 'UNKNOWN_ERROR'

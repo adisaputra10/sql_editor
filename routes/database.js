@@ -416,4 +416,149 @@ router.post('/tables', requireAuth, async (req, res) => {
   }
 });
 
+// Get table structure/schema
+router.post('/table-structure', requireAuth, async (req, res) => {
+  const { connectionId, database, tableName } = req.body;
+  const userId = req.session.user.id;
+
+  if (!connectionId || !database || !tableName) {
+    return res.status(400).json({
+      success: false,
+      message: 'Connection ID, database name, and table name are required'
+    });
+  }
+
+  const mysqlConn = new MySQLConnection();
+  let adminConnection;
+
+  try {
+    adminConnection = await mysqlConn.getConnection();
+    
+    // Get connection details
+    const [connections] = await adminConnection.execute(
+      'SELECT * FROM database_connections WHERE id = ? AND user_id = ?',
+      [connectionId, userId]
+    );
+
+    if (connections.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Connection not found'
+      });
+    }
+
+    const connConfig = connections[0];
+    let dbConnection;
+    let structure = [];
+
+    if (connConfig.type === 'mysql') {
+      const config = {
+        host: connConfig.host,
+        port: connConfig.port,
+        user: connConfig.username,
+        password: connConfig.password,
+        database: database
+      };
+      
+      if (connConfig.use_ssl === 1) {
+        config.ssl = {};
+      }
+      
+      dbConnection = new DynamicMySQLConnection(config);
+      
+      const conn = await dbConnection.getConnection();
+      const [rows] = await conn.execute(`DESCRIBE ${tableName}`);
+      structure = rows.map(row => ({
+        column: row.Field,
+        type: row.Type,
+        null: row.Null,
+        key: row.Key,
+        default: row.Default,
+        extra: row.Extra
+      }));
+      await conn.end();
+
+    } else if (connConfig.type === 'postgresql') {
+      const config = {
+        host: connConfig.host,
+        port: connConfig.port,
+        user: connConfig.username,
+        password: connConfig.password,
+        database: database
+      };
+      
+      if (connConfig.use_ssl === 1) {
+        config.ssl = true;
+      }
+      
+      dbConnection = new DynamicPostgreSQLConnection(config);
+      
+      const client = await dbConnection.getConnection();
+      const result = await client.query(`
+        SELECT 
+          c.column_name as column,
+          c.data_type as type,
+          c.character_maximum_length as max_length,
+          c.is_nullable as null,
+          c.column_default as default,
+          CASE 
+            WHEN pk.column_name IS NOT NULL THEN 'PRI'
+            WHEN fk.column_name IS NOT NULL THEN 'MUL'
+            ELSE ''
+          END as key,
+          CASE 
+            WHEN c.column_default LIKE 'nextval%' THEN 'auto_increment'
+            ELSE ''
+          END as extra
+        FROM information_schema.columns c
+        LEFT JOIN (
+          SELECT kcu.column_name
+          FROM information_schema.table_constraints tc
+          JOIN information_schema.key_column_usage kcu 
+            ON tc.constraint_name = kcu.constraint_name
+          WHERE tc.table_name = $1 
+            AND tc.constraint_type = 'PRIMARY KEY'
+        ) pk ON c.column_name = pk.column_name
+        LEFT JOIN (
+          SELECT kcu.column_name
+          FROM information_schema.table_constraints tc
+          JOIN information_schema.key_column_usage kcu 
+            ON tc.constraint_name = kcu.constraint_name
+          WHERE tc.table_name = $1 
+            AND tc.constraint_type = 'FOREIGN KEY'
+        ) fk ON c.column_name = fk.column_name
+        WHERE c.table_name = $1
+        ORDER BY c.ordinal_position
+      `, [tableName]);
+      
+      structure = result.rows.map(row => ({
+        column: row.column,
+        type: row.max_length ? `${row.type}(${row.max_length})` : row.type,
+        null: row.null === 'YES' ? 'YES' : 'NO',
+        key: row.key,
+        default: row.default,
+        extra: row.extra
+      }));
+      
+      await client.end();
+    }
+
+    res.json({
+      success: true,
+      structure
+    });
+
+  } catch (error) {
+    console.error('Get table structure error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve table structure: ' + error.message
+    });
+  } finally {
+    if (adminConnection) {
+      await adminConnection.end();
+    }
+  }
+});
+
 module.exports = router;

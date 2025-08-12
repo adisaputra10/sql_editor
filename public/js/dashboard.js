@@ -51,12 +51,24 @@ $(document).ready(function() {
         console.log('Database type changed to:', type);
         if (type === 'mysql') {
             $('#port').val(3306);
+            $('#username').attr('placeholder', 'root');
+            $('#database').attr('placeholder', 'database_name');
         } else if (type === 'postgresql') {
             $('#port').val(5432);
+            $('#username').val('postgres');
+            $('#username').attr('placeholder', 'postgres');
+            $('#database').val('sqleditor');
+            $('#database').attr('placeholder', 'postgres');
         }
     });
     
     console.log('Dashboard initialization complete');
+    
+    // Initialize tooltips
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
     
     // Load pending approvals count for admin
     if (window.userRole === 'admin') {
@@ -209,9 +221,10 @@ function setupEventListeners() {
     console.log('Setting up event listeners');
     
     // Add connection button
-    $('#addConnectionBtn, #getStartedBtn').click(function(e) {
+    $('#addConnectionBtn, #getStartedBtn, #addConnectionBtnHeader, #addConnectionBtnMain').click(function(e) {
         e.preventDefault();
-        console.log('Add connection button clicked');
+        console.log('Add connection button clicked from setupEventListeners');
+        console.log('Modal element exists:', $('#connectionModal').length > 0);
         $('#connectionModal').modal('show');
     });
 
@@ -434,6 +447,7 @@ function loadConnections() {
 }
 
 function displayConnections() {
+    // Display in sidebar
     const connectionsHtml = connections.map(conn => `
         <div class="connection-item mb-2">
             <div class="d-flex align-items-center justify-content-between p-2 rounded" 
@@ -464,6 +478,40 @@ function displayConnections() {
     `).join('');
     
     $('#connectionsList').html(connectionsHtml);
+
+    // Display in main content grid view
+    const gridHtml = connections.map(conn => `
+        <div class="col-md-4 mb-3">
+            <div class="card h-100 connection-card" data-connection-id="${conn.id}" style="cursor: pointer; transition: all 0.3s;">
+                <div class="card-body text-center">
+                    <div class="mb-3">
+                        <i class="bi bi-${conn.type === 'mysql' ? 'database' : 'server'} display-6 text-primary"></i>
+                    </div>
+                    <h6 class="card-title">${conn.name}</h6>
+                    <p class="card-text small text-muted">
+                        ${conn.type.toUpperCase()}<br>
+                        ${conn.host}:${conn.port}
+                    </p>
+                    <div class="btn-group w-100">
+                        <button class="btn btn-primary btn-sm connect-btn" data-connection-id="${conn.id}">
+                            <i class="bi bi-plug me-1"></i>Connect
+                        </button>
+                        <button class="btn btn-outline-danger btn-sm delete-connection-btn" data-connection-id="${conn.id}">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `).join('');
+
+    $('#connectionsGridView').html(gridHtml);
+
+    // Add hover effects for grid cards
+    $('.connection-card').hover(
+        function() { $(this).addClass('shadow-lg'); },
+        function() { $(this).removeClass('shadow-lg'); }
+    );
     
     // Event listeners for connection items
     $('.connect-btn').click(function(e) {
@@ -690,6 +738,21 @@ function loadTables(database, container) {
                     const tableName = $(this).data('table');
                     generateSelectQuery(tableName);
                 });
+
+                // Event listener for right-click to show table structure
+                container.find('.table-item').on('contextmenu', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const tableName = $(this).data('table');
+                    showTableStructure(tableName);
+                });
+
+                // Add double-click to show structure as well
+                container.find('.table-item').dblclick(function(e) {
+                    e.stopPropagation();
+                    const tableName = $(this).data('table');
+                    showTableStructure(tableName);
+                });
             }
         },
         error: function(xhr) {
@@ -700,8 +763,119 @@ function loadTables(database, container) {
 }
 
 function generateSelectQuery(tableName) {
-    const query = `SELECT * FROM \`${tableName}\` LIMIT 100;`;
+    // Different syntax for different database types
+    let query;
+    if (currentConnection && currentConnection.type === 'postgresql') {
+        query = `SELECT * FROM ${tableName} LIMIT 100;`;
+    } else {
+        query = `SELECT * FROM \`${tableName}\` LIMIT 100;`;
+    }
     queryEditor.setValue(query);
+    queryEditor.focus();
+}
+
+function showTableStructure(tableName) {
+    if (!currentConnection || !currentDatabase) {
+        showAlert('warning', 'Please connect to a database first');
+        return;
+    }
+
+    $('#tableStructureModalTitle').text(`Table Structure: ${tableName}`);
+    $('#tableStructureContent').html('<div class="text-center"><i class="spinner-border"></i> Loading...</div>');
+    $('#tableStructureModal').modal('show');
+
+    $.ajax({
+        url: '/api/database/table-structure',
+        method: 'POST',
+        data: {
+            connectionId: currentConnection.id,
+            database: currentDatabase,
+            tableName: tableName
+        },
+        success: function(response) {
+            if (response.success) {
+                displayTableStructure(response.structure, tableName);
+            } else {
+                $('#tableStructureContent').html(`<div class="alert alert-danger">${response.message}</div>`);
+            }
+        },
+        error: function(xhr) {
+            const response = xhr.responseJSON;
+            $('#tableStructureContent').html(`<div class="alert alert-danger">Failed to load table structure: ${response ? response.message : 'Unknown error'}</div>`);
+        }
+    });
+}
+
+function displayTableStructure(structure, tableName) {
+    let html = `
+        <div class="mb-3">
+            <h6><i class="bi bi-table me-2"></i>Table: ${tableName}</h6>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-striped table-sm">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Column</th>
+                        <th>Type</th>
+                        <th>Null</th>
+                        <th>Key</th>
+                        <th>Default</th>
+                        <th>Extra</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+
+    structure.forEach(col => {
+        const keyBadge = col.key === 'PRI' ? '<span class="badge bg-warning">PRIMARY</span>' :
+                       col.key === 'MUL' ? '<span class="badge bg-info">FOREIGN</span>' : 
+                       col.key === 'UNI' ? '<span class="badge bg-success">UNIQUE</span>' : '';
+        
+        const extraBadge = col.extra === 'auto_increment' ? '<span class="badge bg-secondary">AUTO_INCREMENT</span>' : col.extra;
+
+        html += `
+            <tr>
+                <td><strong>${col.column}</strong></td>
+                <td><code>${col.type}</code></td>
+                <td>${col.null}</td>
+                <td>${keyBadge}</td>
+                <td>${col.default || '<em>NULL</em>'}</td>
+                <td>${extraBadge}</td>
+            </tr>
+        `;
+    });
+
+    html += `
+                </tbody>
+            </table>
+        </div>
+        <div class="mt-3">
+            <button class="btn btn-primary btn-sm me-2" onclick="generateSelectQuery('${tableName}')">
+                <i class="bi bi-play me-1"></i>Generate SELECT
+            </button>
+            <button class="btn btn-outline-secondary btn-sm" onclick="generateCreateQuery('${tableName}')">
+                <i class="bi bi-code me-1"></i>Show CREATE
+            </button>
+        </div>
+    `;
+
+    $('#tableStructureContent').html(html);
+}
+
+function generateCreateQuery(tableName) {
+    $('#tableStructureModal').modal('hide');
+    
+    if (currentConnection && currentConnection.type === 'postgresql') {
+        // For PostgreSQL, show the table definition
+        const query = `-- Table structure for ${tableName}
+\\d+ ${tableName}`;
+        queryEditor.setValue(query);
+    } else {
+        // For MySQL
+        const query = `SHOW CREATE TABLE \`${tableName}\`;`;
+        queryEditor.setValue(query);
+    }
+    
     queryEditor.focus();
 }
 

@@ -1,0 +1,30 @@
+# Logs
+logs/
+*.log
+
+# Environment files
+.env.local
+.env.production
+
+# Node modules
+node_modules/
+
+# Temporary files
+tmp/
+temp/
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Documentation (keep in repository)
+!README.md
+!*.md

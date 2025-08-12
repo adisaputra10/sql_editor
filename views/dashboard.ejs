@@ -618,9 +618,14 @@
             <h6 class="text-uppercase text-light mb-3">
                 <i class="bi bi-plug me-2"></i>Connections
             </h6>
-            <button class="btn btn-light btn-sm w-100 mb-3" id="addConnectionBtn">
-                <i class="bi bi-plus-circle me-2"></i>Add Connection
-            </button>
+            
+            <!-- Add Connection Button - Prominent -->
+            <div class="text-center mb-3">
+                <button class="btn btn-primary btn-sm w-100" id="addConnectionBtn" style="padding: 12px;">
+                    <i class="bi bi-plus-circle me-2"></i>Add New Connection
+                </button>
+            </div>
+            
             <div id="connectionsList">
                 <!-- Connections will be loaded here -->
             </div>
@@ -668,6 +673,10 @@
         <div class="database-tree" id="databaseTree" style="display: none;">
             <h6 class="text-light mb-3">
                 <i class="bi bi-diagram-3 me-2"></i>Database Structure
+                <i class="bi bi-info-circle text-muted" 
+                   data-bs-toggle="tooltip" 
+                   data-bs-placement="right" 
+                   title="Click table: Generate SELECT query | Double-click: View table structure | Right-click: Show structure"></i>
             </h6>
             <div id="treeContent">
                 <!-- Tree content will be loaded here -->
@@ -744,13 +753,41 @@
 
             <!-- Query Interface -->
             <div id="queryInterface" style="display: none;">
+                <!-- Connection Management Section -->
+                <div class="row mb-4">
+                    <div class="col-12">
+                        <div class="card border-primary">
+                            <div class="card-header bg-primary text-white">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <h6 class="mb-0">
+                                        <i class="bi bi-plug me-2"></i>Database Connections
+                                    </h6>
+                                    <button class="btn btn-light btn-sm" id="addConnectionBtnMain">
+                                        <i class="bi bi-plus-circle me-1"></i>Add New Connection
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div id="connectionsGridView" class="row">
+                                    <!-- Connections will be displayed here in grid view -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
                 <div class="row">
                     <div class="col-12">
                         <div class="card mb-4">
                             <div class="card-header d-flex justify-content-between align-items-center">
-                                <h5 class="mb-0">
-                                    <i class="bi bi-code-square me-2"></i>SQL Query Editor
-                                </h5>
+                                <div class="d-flex align-items-center">
+                                    <h5 class="mb-0 me-3">
+                                        <i class="bi bi-code-square me-2"></i>SQL Query Editor
+                                    </h5>
+                                    <button class="btn btn-outline-primary btn-sm" id="addConnectionBtnHeader">
+                                        <i class="bi bi-plus-circle me-1"></i>Add Connection
+                                    </button>
+                                </div>
                                 <div class="d-flex align-items-center justify-content-between">
                                     <div class="d-flex align-items-center gap-3">
                                         <select class="form-select form-select-sm" id="databaseSelector" style="width: auto; display: none;">
@@ -1370,6 +1407,26 @@
                     <button type="button" class="btn btn-danger" id="confirmDeleteSettingBtn">
                         <i class="bi bi-trash me-1"></i>Delete Setting
                     </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Table Structure Modal -->
+    <div class="modal fade" id="tableStructureModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="tableStructureModalTitle">Table Structure</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="tableStructureContent">
+                        <!-- Table structure will be loaded here -->
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
                 </div>
             </div>
         </div>

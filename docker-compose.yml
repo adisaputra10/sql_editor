@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  # MariaDB Database
+  mariadb:
+    image: mariadb:10.11
+    container_name: sqleditor-mariadb
+    environment:
+      MYSQL_ROOT_PASSWORD: ""
+      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+      MYSQL_DATABASE: sql_editor_users
+    ports:
+      - "3306:3306"
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    networks:
+      - sqleditor-network
+    restart: unless-stopped
+
+  # SQL Editor Application
+  app:
+    build: .
+    container_name: sqleditor-app
+    environment:
+      PORT: 3000
+      SESSION_SECRET: docker-secure-secret-key-1234567890
+      MYSQL_HOST: mariadb
+      MYSQL_PORT: 3306
+      MYSQL_USER: root
+      MYSQL_PASSWORD: ""
+      MYSQL_DATABASE: sql_editor_users
+      DEFAULT_MARIADB_HOST: mariadb
+      DEFAULT_MARIADB_PORT: 3306
+      JWT_SECRET: docker-jwt-secret-key-1234567890
+      JWT_EXPIRES_IN: 24h
+    ports:
+      - "3000:3000"
+    depends_on:
+      - mariadb
+    networks:
+      - sqleditor-network
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+
+volumes:
+  mariadb_data:
+
+networks:
+  sqleditor-network:
+    driver: bridge
