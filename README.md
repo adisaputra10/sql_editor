@@ -1,6 +1,14 @@
 # SQL Editor - MariaDB & PostgreSQL Admin Tool
 
-SQL Editor a2. Pilih jenis database (MariaDB/MySQL/PostgreSQL)alah aplikasi web untuk mengelola database MariaDB/MySQL dan PostgreSQL, mirip dengan phpMyAdmin atau pgAdmin.
+SQL Editor adalah aplikasi web untuk mengelola database MariaDB/MySQL dan PostgreSQL, mirip dengan phpMyAdmin atau pgAdmin.
+
+## Demo Screenshots
+
+### Query Editor & Results
+![Login Interface](public/images/gambar1.png)
+
+### Request and Approval
+![Query Editor](public/images/gambar2.png)
 
 ## Fitur
 
