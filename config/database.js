@@ -6,7 +6,10 @@ function parseSSLConfig(ssl) {
   if (ssl === true || ssl === 1 || ssl === '1' || ssl === 'true') {
     return { rejectUnauthorized: false }; // For self-signed certificates
   }
-  return null; // Use null instead of false for better compatibility
+  if (ssl === false || ssl === 0 || ssl === '0' || ssl === 'false' || ssl === null || ssl === undefined) {
+    return null; // Explicitly disable SSL
+  }
+  return null; // Default to no SSL for better compatibility
 }
 
 // MariaDB connection for user data (reference data)
@@ -76,6 +79,21 @@ class DynamicMySQLConnection {
       const connection = await mysql.createConnection(this.config);
       return connection;
     } catch (error) {
+      // If SSL error occurs, try without SSL
+      if (error.code === 'HANDSHAKE_NO_SSL_SUPPORT' || error.message.includes('secure connection')) {
+        console.log('SSL not supported, trying without SSL...');
+        try {
+          const configWithoutSSL = {
+            ...this.config,
+            ssl: null
+          };
+          const connection = await mysql.createConnection(configWithoutSSL);
+          return connection;
+        } catch (fallbackError) {
+          console.error('Fallback connection without SSL also failed:', fallbackError);
+          throw fallbackError;
+        }
+      }
       console.error('Dynamic MySQL connection error:', error);
       throw error;
     }
@@ -119,6 +137,22 @@ class DynamicPostgreSQLConnection {
       await client.connect();
       return client;
     } catch (error) {
+      // If SSL error occurs, try without SSL
+      if (error.code === 'ECONNREFUSED' || error.message.includes('SSL') || error.message.includes('secure')) {
+        console.log('SSL connection failed, trying without SSL...');
+        try {
+          const configWithoutSSL = {
+            ...this.config,
+            ssl: false
+          };
+          const client = new Client(configWithoutSSL);
+          await client.connect();
+          return client;
+        } catch (fallbackError) {
+          console.error('Fallback PostgreSQL connection without SSL also failed:', fallbackError);
+          throw fallbackError;
+        }
+      }
       console.error('PostgreSQL connection error:', error);
       throw error;
     }
@@ -167,9 +201,18 @@ async function initializeDatabase() {
         email VARCHAR(100) UNIQUE NOT NULL,
         password VARCHAR(255) NOT NULL,
         full_name VARCHAR(100),
+        role ENUM('admin', 'user') DEFAULT 'user',
+        is_active TINYINT(1) DEFAULT 1,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       )
+    `);
+
+    // Add role column if it doesn't exist (for existing users table)
+    await connection.execute(`
+      ALTER TABLE users 
+      ADD COLUMN IF NOT EXISTS role ENUM('admin', 'user') DEFAULT 'user',
+      ADD COLUMN IF NOT EXISTS is_active TINYINT(1) DEFAULT 1
     `);
 
     // Create database connections table (to store user's favorite connections)
@@ -206,7 +249,141 @@ async function initializeDatabase() {
       )
     `);
 
+    // Create query approval requests table
+    await connection.execute(`
+      CREATE TABLE IF NOT EXISTS query_approval_requests (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        connection_id INT,
+        query_text TEXT NOT NULL,
+        query_type ENUM('SELECT', 'INSERT', 'UPDATE', 'DELETE', 'ALTER', 'DROP', 'CREATE', 'OTHER') NOT NULL,
+        reason TEXT,
+        database_name VARCHAR(255),
+        status ENUM('pending', 'approved', 'rejected') DEFAULT 'pending',
+        approved_by INT,
+        approval_comment TEXT,
+        requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        approved_at TIMESTAMP NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (connection_id) REFERENCES database_connections(id) ON DELETE SET NULL,
+        FOREIGN KEY (approved_by) REFERENCES users(id) ON DELETE SET NULL
+      )
+    `);
+
+    // Add database_name column to query_approval_requests if not exists
+    try {
+      await connection.execute(`
+        ALTER TABLE query_approval_requests 
+        ADD COLUMN database_name VARCHAR(255) NULL
+        AFTER reason
+      `);
+      console.log('Added database_name column to query_approval_requests table');
+    } catch (error) {
+      if (!error.message.includes('Duplicate column name')) {
+        console.log('database_name column already exists or other error:', error.message);
+      }
+    }
+
+    // Create approval patterns table
+    await connection.execute(`
+      CREATE TABLE IF NOT EXISTS approval_patterns (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        pattern VARCHAR(100) NOT NULL UNIQUE,
+        description TEXT,
+        is_active TINYINT(1) DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Check if name column exists and add if missing (for existing databases)
+    try {
+      await connection.execute(`
+        ALTER TABLE approval_patterns 
+        ADD COLUMN name VARCHAR(255) NOT NULL DEFAULT '' AFTER id
+      `);
+    } catch (error) {
+      // Column already exists or other error, continue
+      if (!error.message.includes('Duplicate column name')) {
+        console.log('Note: Could not add name column:', error.message);
+      }
+    }
+
+    // Insert default approval patterns
+    const defaultPatterns = [
+      { name: 'Insert Operations', pattern: 'INSERT', description: 'Insert data into tables' },
+      { name: 'Update Operations', pattern: 'UPDATE', description: 'Update existing data' },
+      { name: 'Delete Operations', pattern: 'DELETE', description: 'Delete data from tables' },
+      { name: 'Drop Operations', pattern: 'DROP', description: 'Drop tables, databases, or other objects' },
+      { name: 'Alter Operations', pattern: 'ALTER', description: 'Alter table structure or database objects' },
+      { name: 'Create Operations', pattern: 'CREATE', description: 'Create tables, databases, or other objects' },
+      { name: 'Truncate Operations', pattern: 'TRUNCATE', description: 'Truncate tables (remove all data)' }
+    ];
+
+    for (const pattern of defaultPatterns) {
+      await connection.execute(`
+        INSERT IGNORE INTO approval_patterns (name, pattern, description) 
+        VALUES (?, ?, ?)
+      `, [pattern.name, pattern.pattern, pattern.description]);
+    }
+
+    // Create default admin user if not exists
+    const bcrypt = require('bcryptjs');
+    const adminPassword = await bcrypt.hash('admin123', 10);
+    
+    await connection.execute(`
+      INSERT IGNORE INTO users (username, email, password, full_name, role) 
+      VALUES ('admin', 'admin@sqleditor.com', ?, 'System Administrator', 'admin')
+    `, [adminPassword]);
+
     console.log('Database tables created successfully');
+    console.log('Default admin user created: admin/admin123');
+    console.log('Default approval patterns created');
+
+    // Create system settings table
+    await connection.execute(`
+      CREATE TABLE IF NOT EXISTS system_settings (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        setting_key VARCHAR(100) NOT NULL UNIQUE,
+        setting_value TEXT NOT NULL,
+        description TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Insert default system settings
+    const defaultSettings = [
+      { 
+        key: 'select_limit', 
+        value: '10', 
+        description: 'Maximum number of rows returned by SELECT queries for non-admin users' 
+      },
+      { 
+        key: 'query_timeout', 
+        value: '30', 
+        description: 'Query execution timeout in seconds' 
+      },
+      { 
+        key: 'enable_query_logging', 
+        value: 'true', 
+        description: 'Enable logging of all executed queries' 
+      }
+    ];
+
+    for (const setting of defaultSettings) {
+      try {
+        await connection.execute(`
+          INSERT IGNORE INTO system_settings (setting_key, setting_value, description) 
+          VALUES (?, ?, ?)
+        `, [setting.key, setting.value, setting.description]);
+      } catch (error) {
+        console.log(`Error inserting setting ${setting.key}:`, error.message);
+      }
+    }
+
+    console.log('Default system settings created');
     
   } catch (error) {
     console.error('Database initialization error:', error);

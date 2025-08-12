@@ -104,7 +104,7 @@ router.post('/login', async (req, res) => {
     
     // Find user by username or email
     const [users] = await connection.execute(
-      'SELECT id, username, email, password, full_name FROM users WHERE username = ? OR email = ?',
+      'SELECT id, username, email, password, full_name, role FROM users WHERE username = ? OR email = ?',
       [username, username]
     );
 
@@ -138,7 +138,8 @@ router.post('/login', async (req, res) => {
       id: user.id,
       username: user.username,
       email: user.email,
-      fullName: user.full_name
+      fullName: user.full_name,
+      role: user.role
     };
 
     res.json({
@@ -149,7 +150,8 @@ router.post('/login', async (req, res) => {
         id: user.id,
         username: user.username,
         email: user.email,
-        fullName: user.full_name
+        fullName: user.full_name,
+        role: user.role
       }
     });
 
@@ -212,5 +214,18 @@ function requireAuth(req, res, next) {
   }
 }
 
+// Middleware to check admin role
+function requireAdmin(req, res, next) {
+  if (req.session.user && req.session.user.role === 'admin') {
+    next();
+  } else {
+    res.status(403).json({ 
+      success: false, 
+      message: 'Admin access required' 
+    });
+  }
+}
+
 module.exports = router;
 module.exports.requireAuth = requireAuth;
+module.exports.requireAdmin = requireAdmin;

@@ -55,8 +55,9 @@ function maskSensitiveData(data, fields) {
 
 // Execute SQL query
 router.post('/execute', requireAuth, async (req, res) => {
-  const { connectionId, database, query, enableMasking = true } = req.body;
+  const { connectionId, database, query, enableMasking = true, approvalId } = req.body;
   const userId = req.session.user.id;
+  const userRole = req.session.user.role;
 
   if (!connectionId || !query) {
     return res.status(400).json({
@@ -71,6 +72,67 @@ router.post('/execute', requireAuth, async (req, res) => {
 
   try {
     adminConnection = await mysqlConn.getConnection();
+
+    // Get system settings (for non-admin users)
+    let selectLimit = null;
+    console.log('User role check:', userRole, 'Session user:', req.session.user); // Debug log
+    
+    if (userRole !== 'admin') {
+      console.log('User is not admin, applying select limit'); // Debug log
+      try {
+        const [limitSettings] = await adminConnection.execute(
+          'SELECT setting_value FROM system_settings WHERE setting_key = ?',
+          ['select_limit']
+        );
+        selectLimit = limitSettings.length > 0 ? parseInt(limitSettings[0].setting_value) : 10;
+        console.log('Select limit for user:', selectLimit); // Debug log
+      } catch (error) {
+        console.log('Could not get select limit setting, using default of 10');
+        selectLimit = 10;
+      }
+    } else {
+      console.log('User is admin, no select limit applied'); // Debug log
+    }
+
+    // Check if query needs approval (for non-admin users)
+    if (userRole !== 'admin') {
+      // Get active approval patterns from database
+      const [activePatterns] = await adminConnection.execute(`
+        SELECT pattern FROM approval_patterns WHERE is_active = true
+      `);
+
+      const queryUpper = query.trim().toUpperCase();
+      const needsApproval = activePatterns.some(row => 
+        queryUpper.startsWith(row.pattern.toUpperCase())
+      );
+
+      if (needsApproval) {
+        // Check if there's an approved request for this query
+        if (!approvalId) {
+          return res.status(403).json({
+            success: false,
+            code: 'APPROVAL_REQUIRED',
+            message: 'This query requires admin approval. Please submit a request.',
+            needsApproval: true
+          });
+        }
+
+        // Verify approval exists and is approved
+        const [approvals] = await adminConnection.execute(`
+          SELECT id FROM query_approval_requests 
+          WHERE id = ? AND user_id = ? AND status = 'approved'
+        `, [approvalId, userId]);
+
+        if (approvals.length === 0) {
+          return res.status(403).json({
+            success: false,
+            code: 'APPROVAL_REQUIRED',
+            message: 'Valid approval required for this query',
+            needsApproval: true
+          });
+        }
+      }
+    }
     
     // Get connection details
     const [connections] = await adminConnection.execute(
@@ -147,25 +209,55 @@ router.post('/execute', requireAuth, async (req, res) => {
                 executionTime: queryExecutionTime
               });
             } else {
-              [rows, fields] = await conn.execute(singleQuery);
+              // Apply SELECT limit for non-admin users
+              let finalQuery = singleQuery;
+              let limitApplied = false;
+              
+              console.log('Processing query:', singleQuery, 'selectLimit:', selectLimit, 'userRole:', userRole); // Debug log
+              
+              if (selectLimit && userRole !== 'admin') {
+                const queryUpper = singleQuery.toUpperCase().trim();
+                if (queryUpper.startsWith('SELECT')) {
+                  // Remove existing LIMIT clause if present and apply admin limit
+                  let queryWithoutLimit = singleQuery.replace(/\s+LIMIT\s+\d+\s*$/i, '');
+                  finalQuery = queryWithoutLimit + ` LIMIT ${selectLimit}`;
+                  limitApplied = true;
+                  console.log('Admin limit applied:', selectLimit, 'Final query:', finalQuery); // Debug log
+                } else {
+                  console.log('No limit applied - not a SELECT query'); // Debug log
+                }
+              } else {
+                console.log('No limit applied - admin user or no selectLimit set'); // Debug log
+              }
+              
+              [rows, fields] = await conn.execute(finalQuery);
               const queryExecutionTime = Date.now() - queryStartTime;
               
               // Determine if it's a SELECT query (has rows to return)
-              const isSelect = singleQuery.toUpperCase().trim().startsWith('SELECT') || 
-                              singleQuery.toUpperCase().trim().startsWith('SHOW') ||
-                              singleQuery.toUpperCase().trim().startsWith('DESCRIBE') ||
-                              singleQuery.toUpperCase().trim().startsWith('EXPLAIN');
+              const isSelect = finalQuery.toUpperCase().trim().startsWith('SELECT') || 
+                              finalQuery.toUpperCase().trim().startsWith('SHOW') ||
+                              finalQuery.toUpperCase().trim().startsWith('DESCRIBE') ||
+                              finalQuery.toUpperCase().trim().startsWith('EXPLAIN');
               
               if (isSelect) {
                 const maskedData = enableMasking ? maskSensitiveData(rows, fields) : rows;
-                allResults.push({
-                  query: singleQuery,
+                const resultData = {
+                  query: singleQuery, // Show original query to user
                   data: maskedData,
                   fields: fields ? fields.map(f => ({ name: f.name, type: f.type })) : [],
                   rowCount: rows.length,
                   executionTime: queryExecutionTime,
                   masked: enableMasking && maskedData !== rows // Indicate if data was masked
-                });
+                };
+                
+                // Add limit notice for non-admin users
+                if (limitApplied) {
+                  resultData.limitApplied = true;
+                  resultData.limitValue = selectLimit;
+                  resultData.notice = `Results limited to ${selectLimit} rows. Contact admin to increase limit.`;
+                }
+                
+                allResults.push(resultData);
               } else {
                 // For INSERT, UPDATE, DELETE, etc.
                 allResults.push({

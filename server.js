@@ -10,6 +10,7 @@ require('dotenv').config();
 const authRoutes = require('./routes/auth');
 const databaseRoutes = require('./routes/database');
 const queryRoutes = require('./routes/query');
+const approvalRoutes = require('./routes/approval');
 const { initializeDatabase } = require('./config/database');
 
 const app = express();
@@ -65,6 +66,10 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use('/auth', authRoutes);
 app.use('/api/database', databaseRoutes);
 app.use('/api/query', queryRoutes);
+app.use('/api/approval', approvalRoutes);
+app.use('/api/users', require('./routes/users'));
+app.use('/api/approval-patterns', require('./routes/approval-patterns'));
+app.use('/api/system-settings', require('./routes/system-settings'));
 
 // Main route
 app.get('/', (req, res) => {

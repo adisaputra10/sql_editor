@@ -550,6 +550,27 @@
             color: #e0e0e0 !important;
         }
 
+        /* Fix for query text area in approval modal */
+        .dark-theme pre {
+            background: rgba(40, 40, 60, 0.9) !important;
+            color: #e0e0e0 !important;
+            border: 1px solid #4a4a6a;
+        }
+
+        .dark-theme .bg-light {
+            background: rgba(40, 40, 60, 0.9) !important;
+            color: #e0e0e0 !important;
+        }
+
+        .dark-theme .card {
+            background: rgba(40, 40, 60, 0.7);
+            border: 1px solid #4a4a6a;
+        }
+
+        .dark-theme .card-body {
+            color: #e0e0e0;
+        }
+
         .dark-theme h1, 
         .dark-theme h2, 
         .dark-theme h3, 
@@ -559,6 +580,7 @@
         .dark-theme p,
         .dark-theme label,
         .dark-theme span,
+        .dark-theme strong,
         .dark-theme div {
             color: #ffffff !important;
         }
@@ -583,6 +605,11 @@
             <div>
                 <h4 class="mb-0">SQL Editor</h4>
                 <small class="text-light">Welcome, <%= user.username %></small>
+                <% if (user.role === 'admin') { %>
+                    <br><span class="badge bg-success mt-1">Admin</span>
+                <% } else { %>
+                    <br><span class="badge bg-info mt-1">User</span>
+                <% } %>
             </div>
         </div>
 
@@ -598,6 +625,44 @@
                 <!-- Connections will be loaded here -->
             </div>
         </div>
+
+        <% if (user.role === 'admin') { %>
+        <!-- Admin Approval Section -->
+        <div class="mb-4">
+            <h6 class="text-light mb-3">
+                <i class="bi bi-check-circle me-2"></i>Query Approvals
+            </h6>
+            <button class="btn btn-outline-light btn-sm w-100 mb-2" id="viewPendingApprovalsBtn">
+                <i class="bi bi-clock me-2"></i>Pending Requests <span id="pendingCount" class="badge bg-danger ms-1">0</span>
+            </button>
+        </div>
+        
+        <!-- User Management Section -->
+        <div class="mb-4">
+            <h6 class="text-light mb-3">
+                <i class="bi bi-people me-2"></i>User Management
+            </h6>
+            <button class="btn btn-outline-light btn-sm w-100 mb-2" id="viewUsersBtn">
+                <i class="bi bi-person-lines-fill me-2"></i>Manage Users
+            </button>
+            <button class="btn btn-outline-light btn-sm w-100 mb-2" id="viewApprovalPatternsBtn">
+                <i class="bi bi-shield-check me-2"></i>Approval Patterns
+            </button>
+            <button class="btn btn-outline-light btn-sm w-100 mb-2" id="viewSystemSettingsBtn">
+                <i class="bi bi-gear me-2"></i>System Settings
+            </button>
+        </div>
+        <% } else { %>
+        <!-- User Request Section -->
+        <div class="mb-4">
+            <h6 class="text-light mb-3">
+                <i class="bi bi-send me-2"></i>My Requests
+            </h6>
+            <button class="btn btn-outline-light btn-sm w-100 mb-2" id="viewMyRequestsBtn">
+                <i class="bi bi-list-ul me-2"></i>View My Requests
+            </button>
+        </div>
+        <% } %>
 
         <!-- Database Tree -->
         <div class="database-tree" id="databaseTree" style="display: none;">
@@ -736,6 +801,88 @@
                     </div>
                 </div>
             </div>
+
+            <!-- User Management Section (Admin Only) -->
+            <% if (user.role === 'admin') { %>
+            <div id="userManagementSection" style="display: none;">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <div class="d-flex align-items-center">
+                            <button class="btn btn-outline-secondary btn-sm me-3" id="backToQueryBtn">
+                                <i class="bi bi-arrow-left me-1"></i>Back to Query
+                            </button>
+                            <h5 class="mb-0">
+                                <i class="bi bi-people me-2"></i>User Management
+                            </h5>
+                        </div>
+                        <button class="btn btn-primary btn-sm" id="addUserBtn">
+                            <i class="bi bi-person-plus me-1"></i>Add New User
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div id="usersContent">
+                            <!-- Users will be loaded here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Approval Pattern Management Section (Admin Only) -->
+            <div id="approvalPatternSection" style="display: none;">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <div class="d-flex align-items-center">
+                            <button class="btn btn-outline-secondary btn-sm me-3" id="backToQueryFromPatternBtn">
+                                <i class="bi bi-arrow-left me-1"></i>Back to Query
+                            </button>
+                            <h5 class="mb-0">
+                                <i class="bi bi-shield-check me-2"></i>Approval Pattern Management
+                            </h5>
+                        </div>
+                        <button class="btn btn-primary btn-sm" id="addPatternBtn">
+                            <i class="bi bi-plus-circle me-1"></i>Add New Pattern
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle me-2"></i>
+                            Configure which SQL query patterns require approval before execution. Users with 'admin' role can execute all queries without approval.
+                        </div>
+                        <div id="patternsContent">
+                            <!-- Patterns will be loaded here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- System Settings Management Section (Admin Only) -->
+            <div id="systemSettingsSection" style="display: none;">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <div class="d-flex align-items-center">
+                            <button class="btn btn-outline-secondary btn-sm me-3" id="backToQueryFromSettingsBtn">
+                                <i class="bi bi-arrow-left me-1"></i>Back to Query
+                            </button>
+                            <h5 class="mb-0">
+                                <i class="bi bi-gear me-2"></i>System Settings
+                            </h5>
+                        </div>
+                        <button class="btn btn-primary btn-sm" id="addSettingBtn">
+                            <i class="bi bi-plus-circle me-1"></i>Add New Setting
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle me-2"></i>
+                            Configure system-wide settings. Changes take effect immediately.
+                        </div>
+                        <div id="settingsContent">
+                            <!-- Settings will be loaded here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <% } %>
         </div>
     </div>
 
@@ -823,6 +970,406 @@
                     <div id="historyContent">
                         <!-- History will be loaded here -->
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Approval Request Modal -->
+    <div class="modal fade" id="approvalRequestModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Request Query Approval</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="approvalRequestForm">
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="approvalConnection" class="form-label">Connection</label>
+                                <input type="text" class="form-control" id="approvalConnection" readonly>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="approvalDatabase" class="form-label">Database</label>
+                                <input type="text" class="form-control" id="approvalDatabase" readonly>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="approvalQueryType" class="form-label">Query Type</label>
+                            <select class="form-select" id="approvalQueryType" required>
+                                <option value="">Select Query Type</option>
+                                <option value="INSERT">INSERT</option>
+                                <option value="UPDATE">UPDATE</option>
+                                <option value="DELETE">DELETE</option>
+                                <option value="ALTER">ALTER</option>
+                                <option value="DROP">DROP</option>
+                                <option value="CREATE">CREATE</option>
+                                <option value="OTHER">OTHER</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="approvalQuery" class="form-label">Query</label>
+                            <textarea class="form-control" id="approvalQuery" rows="8" readonly></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label for="approvalReason" class="form-label">Reason/Description</label>
+                            <textarea class="form-control" id="approvalReason" rows="3" placeholder="Please provide a reason for this query..."></textarea>
+                        </div>
+                    </form>
+                    <div id="approvalModalAlert"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="submitApprovalRequestBtn">Submit Request</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pending Approvals Modal (Admin) -->
+    <div class="modal fade" id="pendingApprovalsModal" tabindex="-1">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Pending Query Approvals</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="pendingApprovalsContent">
+                        <!-- Pending approvals will be loaded here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- User Requests Modal -->
+    <div class="modal fade" id="userRequestsModal" tabindex="-1">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">My Query Requests</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="userRequestsContent">
+                        <!-- User requests will be loaded here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Approval Decision Modal -->
+    <div class="modal fade" id="approvalDecisionModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="approvalDecisionTitle">Process Approval Request</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Query Details:</label>
+                        <div class="card">
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <strong>User:</strong> <span id="decisionUser"></span><br>
+                                        <strong>Connection:</strong> <span id="decisionConnection"></span>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <strong>Database:</strong> <span id="decisionDatabase"></span><br>
+                                        <strong>Type:</strong> <span id="decisionQueryType" class="badge bg-info"></span>
+                                    </div>
+                                </div>
+                                <div class="mt-2">
+                                    <strong>Query:</strong>
+                                    <pre id="decisionQuery" class="bg-light p-2 mt-1"></pre>
+                                </div>
+                                <div class="mt-2">
+                                    <strong>Reason:</strong>
+                                    <p id="decisionReason" class="text-muted"></p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input type="checkbox" class="form-check-input" id="autoExecuteCheck" checked>
+                            <label class="form-check-label" for="autoExecuteCheck">
+                                <strong>Auto-execute query after approval</strong>
+                                <small class="text-muted d-block">Query will be automatically executed on the target database if approved</small>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="decisionComment" class="form-label">Admin Comment</label>
+                        <textarea class="form-control" id="decisionComment" rows="3" placeholder="Add your comment here..."></textarea>
+                    </div>
+
+                    <div id="decisionAlert"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-danger" id="rejectDecisionBtn">
+                        <i class="bi bi-x-circle me-1"></i>Reject
+                    </button>
+                    <button type="button" class="btn btn-success" id="approveDecisionBtn">
+                        <i class="bi bi-check-circle me-1"></i>Approve & Execute
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Reject Modal -->
+    <div class="modal fade" id="quickRejectModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Reject Query Request</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to reject the query request from <strong id="rejectUsername"></strong>?</p>
+                    <div class="mb-3">
+                        <label for="rejectReason" class="form-label">Rejection Reason <span class="text-danger">*</span></label>
+                        <textarea class="form-control" id="rejectReason" rows="3" 
+                                  placeholder="Please provide a reason for rejection..." required></textarea>
+                    </div>
+                    <div id="quickRejectAlert"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-danger" id="confirmRejectBtn">
+                        <i class="bi bi-x-circle me-1"></i>Reject Request
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add/Edit User Modal -->
+    <div class="modal fade" id="userFormModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="userFormTitle">Add New User</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="userForm">
+                        <input type="hidden" id="userId">
+                        
+                        <div class="mb-3">
+                            <label for="userUsername" class="form-label">Username <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="userUsername" required>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="userFullName" class="form-label">Full Name <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="userFullName" required>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="userEmail" class="form-label">Email</label>
+                            <input type="email" class="form-control" id="userEmail">
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="userRole" class="form-label">Role <span class="text-danger">*</span></label>
+                            <select class="form-select" id="userRole" required>
+                                <option value="user">User</option>
+                                <option value="admin">Admin</option>
+                            </select>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="userPassword" class="form-label">Password <span class="text-danger" id="passwordRequired">*</span></label>
+                            <input type="password" class="form-control" id="userPassword">
+                            <small class="form-text text-muted" id="passwordHelp">Minimum 6 characters. Leave empty when editing to keep current password.</small>
+                        </div>
+                        
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="userActive" checked>
+                            <label class="form-check-label" for="userActive">
+                                Active User
+                            </label>
+                        </div>
+                        
+                        <div id="userFormAlert"></div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="saveUserBtn">
+                        <i class="bi bi-check-circle me-1"></i>Save User
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete User Confirmation Modal -->
+    <div class="modal fade" id="deleteUserModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Delete User</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to delete user <strong id="deleteUserName"></strong>?</p>
+                    <p class="text-danger"><small>This action cannot be undone. All user data including connections and query history will be permanently removed.</small></p>
+                    <div id="deleteUserAlert"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-danger" id="confirmDeleteUserBtn">
+                        <i class="bi bi-trash me-1"></i>Delete User
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add/Edit Approval Pattern Modal -->
+    <div class="modal fade" id="patternFormModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="patternFormTitle">Add New Approval Pattern</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="patternForm">
+                        <input type="hidden" id="patternId">
+                        
+                        <div class="mb-3">
+                            <label for="patternName" class="form-label">Pattern Name <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="patternName" placeholder="e.g., INSERT Operations" required>
+                            <small class="form-text text-muted">Descriptive name for this approval pattern</small>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="patternValue" class="form-label">SQL Pattern <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="patternValue" placeholder="e.g., INSERT" required>
+                            <small class="form-text text-muted">SQL keyword that will trigger approval requirement (case-insensitive)</small>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="patternDescription" class="form-label">Description</label>
+                            <textarea class="form-control" id="patternDescription" rows="3" placeholder="Optional description of what this pattern covers"></textarea>
+                        </div>
+                        
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="patternActive" checked>
+                            <label class="form-check-label" for="patternActive">
+                                Enable Pattern (Active)
+                            </label>
+                            <small class="form-text text-muted d-block">Only active patterns will require approval</small>
+                        </div>
+                        
+                        <div id="patternFormAlert"></div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="savePatternBtn">
+                        <i class="bi bi-check-circle me-1"></i>Save Pattern
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Pattern Confirmation Modal -->
+    <div class="modal fade" id="deletePatternModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Delete Approval Pattern</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to delete the approval pattern <strong id="deletePatternName"></strong>?</p>
+                    <p class="text-warning"><small>This will remove the approval requirement for queries matching this pattern.</small></p>
+                    <div id="deletePatternAlert"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-danger" id="confirmDeletePatternBtn">
+                        <i class="bi bi-trash me-1"></i>Delete Pattern
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add/Edit System Setting Modal -->
+    <div class="modal fade" id="settingFormModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="settingFormTitle">Add New System Setting</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="settingForm">
+                        <input type="hidden" id="settingKey">
+                        
+                        <div class="mb-3">
+                            <label for="settingKeyInput" class="form-label">Setting Key <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="settingKeyInput" placeholder="e.g., select_limit" required>
+                            <small class="form-text text-muted">Unique identifier for this setting (use underscore for spaces)</small>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="settingValue" class="form-label">Setting Value <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="settingValue" placeholder="e.g., 10" required>
+                            <small class="form-text text-muted">The value for this setting</small>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="settingDescription" class="form-label">Description</label>
+                            <textarea class="form-control" id="settingDescription" rows="3" placeholder="Describe what this setting controls"></textarea>
+                        </div>
+                        
+                        <div id="settingFormAlert"></div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="saveSettingBtn">
+                        <i class="bi bi-check-circle me-1"></i>Save Setting
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Setting Confirmation Modal -->
+    <div class="modal fade" id="deleteSettingModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Delete System Setting</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to delete the system setting <strong id="deleteSettingKey"></strong>?</p>
+                    <p class="text-warning"><small>This will remove the setting permanently and may affect system behavior.</small></p>
+                    <div id="deleteSettingAlert"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-danger" id="confirmDeleteSettingBtn">
+                        <i class="bi bi-trash me-1"></i>Delete Setting
+                    </button>
                 </div>
             </div>
         </div>
