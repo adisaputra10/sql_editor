@@ -1,0 +1,561 @@
+const express = require('express');
+const { DynamicMySQLConnection, DynamicPostgreSQLConnection, MySQLConnection } = require('../config/database');
+const { requireAuth } = require('./auth');
+
+const router = express.Router();
+
+// Helper function to mask sensitive data
+function maskSensitiveData(data, fields) {
+  if (!Array.isArray(data) || !fields) return data;
+  
+  // Define sensitive column patterns
+  const sensitivePatterns = [
+    /nama/i,
+    /name/i,
+    /email/i,
+    /phone/i,
+    /telepon/i,
+    /hp/i,
+    /password/i,
+    /pass/i,
+    /token/i,
+    /secret/i,
+    /key/i,
+    /nik/i,
+    /ktp/i,
+    /passport/i,
+    /credit_card/i,
+    /card_number/i
+  ];
+  
+  // Find sensitive columns
+  const sensitiveColumns = fields.filter(field => 
+    sensitivePatterns.some(pattern => pattern.test(field.name))
+  ).map(field => field.name);
+  
+  if (sensitiveColumns.length === 0) return data;
+  
+  // Mask data in sensitive columns
+  return data.map(row => {
+    const maskedRow = { ...row };
+    sensitiveColumns.forEach(column => {
+      if (maskedRow[column] !== null && maskedRow[column] !== undefined) {
+        const value = String(maskedRow[column]);
+        if (value.length <= 2) {
+          maskedRow[column] = '*'.repeat(value.length);
+        } else {
+          // Show first 2 characters, mask the rest
+          maskedRow[column] = value.substring(0, 2) + '*'.repeat(Math.max(1, value.length - 2));
+        }
+      }
+    });
+    return maskedRow;
+  });
+}
+
+// Execute SQL query
+router.post('/execute', requireAuth, async (req, res) => {
+  const { connectionId, database, query, enableMasking = true } = req.body;
+  const userId = req.session.user.id;
+
+  if (!connectionId || !query) {
+    return res.status(400).json({
+      success: false,
+      message: 'Connection ID and query are required'
+    });
+  }
+
+  const mysqlConn = new MySQLConnection();
+  let adminConnection;
+  const startTime = Date.now();
+
+  try {
+    adminConnection = await mysqlConn.getConnection();
+    
+    // Get connection details
+    const [connections] = await adminConnection.execute(
+      'SELECT * FROM database_connections WHERE id = ? AND user_id = ?',
+      [connectionId, userId]
+    );
+
+    if (connections.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Connection not found'
+      });
+    }
+
+    const connConfig = connections[0];
+    let dbConnection;
+    let result = {};
+    let executionTime = 0;
+    let success = true;
+    let errorMessage = null;
+
+    try {
+      if (connConfig.type === 'mysql') {
+        const config = {
+          host: connConfig.host,
+          port: connConfig.port,
+          user: connConfig.username,
+          password: connConfig.password
+        };
+        
+        // Add database to config if available
+        const selectedDatabase = database || connConfig.database_name;
+        if (selectedDatabase) {
+          config.database = selectedDatabase;
+        }
+        
+        // Only add ssl if it's enabled (1 in database)
+        if (connConfig.use_ssl === 1) {
+          config.ssl = {};
+        }
+        
+        dbConnection = new DynamicMySQLConnection(config);
+        
+        const conn = await dbConnection.getConnection();
+        
+        // If we have a database but it's not in the connection config, use USE statement
+        if (database && database !== connConfig.database_name) {
+          try {
+            await conn.query(`USE \`${database}\``);
+          } catch (useError) {
+            console.log('Could not USE database, continuing without it:', useError.message);
+          }
+        }
+        
+        // Split query by semicolon and execute each statement
+        const queries = query.split(';').filter(q => q.trim());
+        let allResults = [];
+        
+        for (let i = 0; i < queries.length; i++) {
+          const singleQuery = queries[i].trim();
+          if (!singleQuery) continue;
+          
+          try {
+            const queryStartTime = Date.now();
+            let rows, fields;
+            
+            // Handle USE statement with query() instead of execute()
+            if (singleQuery.toUpperCase().trim().startsWith('USE ')) {
+              await conn.query(singleQuery);
+              const queryExecutionTime = Date.now() - queryStartTime;
+              allResults.push({
+                query: singleQuery,
+                message: 'Database selected successfully',
+                executionTime: queryExecutionTime
+              });
+            } else {
+              [rows, fields] = await conn.execute(singleQuery);
+              const queryExecutionTime = Date.now() - queryStartTime;
+              
+              // Determine if it's a SELECT query (has rows to return)
+              const isSelect = singleQuery.toUpperCase().trim().startsWith('SELECT') || 
+                              singleQuery.toUpperCase().trim().startsWith('SHOW') ||
+                              singleQuery.toUpperCase().trim().startsWith('DESCRIBE') ||
+                              singleQuery.toUpperCase().trim().startsWith('EXPLAIN');
+              
+              if (isSelect) {
+                const maskedData = enableMasking ? maskSensitiveData(rows, fields) : rows;
+                allResults.push({
+                  query: singleQuery,
+                  data: maskedData,
+                  fields: fields ? fields.map(f => ({ name: f.name, type: f.type })) : [],
+                  rowCount: rows.length,
+                  executionTime: queryExecutionTime,
+                  masked: enableMasking && maskedData !== rows // Indicate if data was masked
+                });
+              } else {
+                // For INSERT, UPDATE, DELETE, etc.
+                allResults.push({
+                  query: singleQuery,
+                  affectedRows: rows.affectedRows || 0,
+                  insertId: rows.insertId || null,
+                  message: `Query executed successfully. Affected rows: ${rows.affectedRows || 0}`,
+                  executionTime: queryExecutionTime
+                });
+              }
+            }
+          } catch (queryError) {
+            console.error('Individual query error:', queryError);
+            allResults.push({
+              query: singleQuery,
+              error: queryError.message,
+              sqlState: queryError.sqlState,
+              errno: queryError.errno
+            });
+            // Continue with next query instead of breaking
+          }
+        }
+        
+        result = {
+          results: allResults,
+          totalQueries: queries.length
+        };
+        
+        await conn.end();
+
+      } else if (connConfig.type === 'postgresql') {
+        const config = {
+          host: connConfig.host,
+          port: connConfig.port,
+          user: connConfig.username,
+          password: connConfig.password,
+          database: database || connConfig.database_name
+        };
+        
+        // Only add ssl if it's enabled (1 in database)
+        if (connConfig.use_ssl === 1) {
+          config.ssl = true;
+        }
+        
+        dbConnection = new DynamicPostgreSQLConnection(config);
+        
+        const client = await dbConnection.getConnection();
+        
+        // Split query by semicolon and execute each statement
+        const queries = query.split(';').filter(q => q.trim());
+        let allResults = [];
+        
+        for (let i = 0; i < queries.length; i++) {
+          const singleQuery = queries[i].trim();
+          if (!singleQuery) continue;
+          
+          const queryStartTime = Date.now();
+          const pgResult = await client.query(singleQuery);
+          const queryExecutionTime = Date.now() - queryStartTime;
+          
+          if (pgResult.rows && pgResult.rows.length > 0) {
+            // SELECT query
+            const columns = pgResult.fields ? pgResult.fields.map(field => ({
+              name: field.name,
+              type: field.dataTypeID,
+              length: field.dataTypeSize
+            })) : [];
+            
+            const maskedData = enableMasking ? maskSensitiveData(pgResult.rows, columns) : pgResult.rows;
+            allResults.push({
+              query: singleQuery,
+              columns: columns,
+              data: maskedData,
+              rowCount: pgResult.rows.length,
+              executionTime: queryExecutionTime,
+              masked: enableMasking && maskedData !== pgResult.rows // Indicate if data was masked
+            });
+          } else {
+            // INSERT, UPDATE, DELETE, etc.
+            allResults.push({
+              query: singleQuery,
+              message: `Query executed successfully. ${pgResult.rowCount || 0} row(s) affected.`,
+              affectedRows: pgResult.rowCount || 0,
+              executionTime: queryExecutionTime
+            });
+          }
+        }
+        
+        result = {
+          results: allResults,
+          totalQueries: queries.length
+        };
+        
+        await client.end();
+      }
+
+    } catch (queryError) {
+      success = false;
+      errorMessage = queryError.message;
+      result = {
+        error: queryError.message,
+        code: queryError.code || 'UNKNOWN_ERROR'
+      };
+    }
+
+    executionTime = Date.now() - startTime;
+
+    // Save query to history
+    try {
+      await adminConnection.execute(
+        `INSERT INTO query_history 
+         (user_id, connection_id, query_text, execution_time, success, error_message) 
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+          userId,
+          connectionId,
+          query,
+          executionTime / 1000, // Convert to seconds
+          success,
+          errorMessage
+        ]
+      );
+    } catch (historyError) {
+      console.error('Failed to save query history:', historyError);
+    }
+
+    res.json({
+      success,
+      executionTime,
+      ...result
+    });
+
+  } catch (error) {
+    console.error('Execute query error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to execute query: ' + error.message
+    });
+  } finally {
+    if (adminConnection) {
+      await adminConnection.end();
+    }
+  }
+});
+
+// Get query history
+router.get('/history', requireAuth, async (req, res) => {
+  const userId = req.session.user.id;
+  const { limit = 50, offset = 0 } = req.query;
+
+  const mysqlConn = new MySQLConnection();
+  let connection;
+
+  try {
+    connection = await mysqlConn.getConnection();
+    
+    const [history] = await connection.execute(
+      `SELECT 
+         qh.id,
+         qh.query_text,
+         qh.execution_time,
+         qh.success,
+         qh.error_message,
+         qh.executed_at,
+         dc.name as connection_name,
+         dc.type as connection_type,
+         dc.host,
+         dc.database_name
+       FROM query_history qh
+       LEFT JOIN database_connections dc ON qh.connection_id = dc.id
+       WHERE qh.user_id = ?
+       ORDER BY qh.executed_at DESC
+       LIMIT ? OFFSET ?`,
+      [userId, parseInt(limit), parseInt(offset)]
+    );
+
+    // Get total count
+    const [countResult] = await connection.execute(
+      'SELECT COUNT(*) as total FROM query_history WHERE user_id = ?',
+      [userId]
+    );
+
+    res.json({
+      success: true,
+      history,
+      total: countResult[0].total,
+      limit: parseInt(limit),
+      offset: parseInt(offset)
+    });
+
+  } catch (error) {
+    console.error('Get query history error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve query history'
+    });
+  } finally {
+    if (connection) {
+      await connection.end();
+    }
+  }
+});
+
+// Delete query from history
+router.delete('/history/:id', requireAuth, async (req, res) => {
+  const historyId = req.params.id;
+  const userId = req.session.user.id;
+
+  const mysqlConn = new MySQLConnection();
+  let connection;
+
+  try {
+    connection = await mysqlConn.getConnection();
+    
+    const [result] = await connection.execute(
+      'DELETE FROM query_history WHERE id = ? AND user_id = ?',
+      [historyId, userId]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Query history not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Query history deleted successfully'
+    });
+
+  } catch (error) {
+    console.error('Delete query history error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete query history'
+    });
+  } finally {
+    if (connection) {
+      await connection.end();
+    }
+  }
+});
+
+// Get table structure
+router.post('/table-structure', requireAuth, async (req, res) => {
+  const { connectionId, database, tableName } = req.body;
+  const userId = req.session.user.id;
+
+  if (!connectionId || !database || !tableName) {
+    return res.status(400).json({
+      success: false,
+      message: 'Connection ID, database, and table name are required'
+    });
+  }
+
+  const mysqlConn = new MySQLConnection();
+  let adminConnection;
+
+  try {
+    adminConnection = await mysqlConn.getConnection();
+    
+    // Get connection details
+    const [connections] = await adminConnection.execute(
+      'SELECT * FROM database_connections WHERE id = ? AND user_id = ?',
+      [connectionId, userId]
+    );
+
+    if (connections.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Connection not found'
+      });
+    }
+
+    const connConfig = connections[0];
+    let dbConnection;
+    let structure = {};
+
+    if (connConfig.type === 'mysql') {
+      const config = {
+        host: connConfig.host,
+        port: connConfig.port,
+        user: connConfig.username,
+        password: connConfig.password,
+        database: database
+      };
+      
+      // Only add ssl if it's enabled (1 in database)
+      if (connConfig.use_ssl === 1) {
+        config.ssl = {};
+      }
+      
+      dbConnection = new DynamicMySQLConnection(config);
+      
+      const conn = await dbConnection.getConnection();
+      const [columns] = await conn.execute(`DESCRIBE \`${tableName}\``);
+      const [indexes] = await conn.execute(`SHOW INDEXES FROM \`${tableName}\``);
+      
+      structure = {
+        columns: columns.map(col => ({
+          field: col.Field,
+          type: col.Type,
+          null: col.Null === 'YES',
+          key: col.Key,
+          default: col.Default,
+          extra: col.Extra
+        })),
+        indexes: indexes.map(idx => ({
+          name: idx.Key_name,
+          column: idx.Column_name,
+          unique: idx.Non_unique === 0,
+          type: idx.Index_type
+        }))
+      };
+      
+      await conn.end();
+
+    } else if (connConfig.type === 'postgresql') {
+      const config = {
+        host: connConfig.host,
+        port: connConfig.port,
+        user: connConfig.username,
+        password: connConfig.password,
+        database: database
+      };
+      
+      // Only add ssl if it's enabled (1 in database)
+      if (connConfig.use_ssl === 1) {
+        config.ssl = true;
+      }
+      
+      dbConnection = new DynamicPostgreSQLConnection(config);
+      
+      const client = await dbConnection.getConnection();
+      
+      // Get columns
+      const columnsResult = await client.query(`
+        SELECT 
+          column_name as field,
+          data_type as type,
+          is_nullable,
+          column_default as default_value,
+          character_maximum_length
+        FROM information_schema.columns 
+        WHERE table_name = $1 AND table_schema = 'public'
+        ORDER BY ordinal_position
+      `, [tableName]);
+      
+      // Get indexes
+      const indexesResult = await client.query(`
+        SELECT 
+          indexname as name,
+          indexdef as definition
+        FROM pg_indexes 
+        WHERE tablename = $1 AND schemaname = 'public'
+      `, [tableName]);
+      
+      structure = {
+        columns: columnsResult.rows.map(col => ({
+          field: col.field,
+          type: col.type + (col.character_maximum_length ? `(${col.character_maximum_length})` : ''),
+          null: col.is_nullable === 'YES',
+          default: col.default_value
+        })),
+        indexes: indexesResult.rows.map(idx => ({
+          name: idx.name,
+          definition: idx.definition
+        }))
+      };
+      
+      await client.end();
+    }
+
+    res.json({
+      success: true,
+      structure
+    });
+
+  } catch (error) {
+    console.error('Get table structure error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve table structure: ' + error.message
+    });
+  } finally {
+    if (adminConnection) {
+      await adminConnection.end();
+    }
+  }
+});
+
+module.exports = router;

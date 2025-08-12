@@ -1,0 +1,837 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SQL Editor - Dashboard</title>
+    <link rel="icon" type="image/x-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='16'>🗄️</text></svg>">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Fira+Code:wght@300;400;500&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/codemirror@5.65.13/lib/codemirror.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/codemirror@5.65.13/theme/material.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary-gradient: linear-gradient(135deg, #87ceeb 0%, #4a90e2 100%);
+            --secondary-gradient: linear-gradient(135deg, #6bb6ff 0%, #4facfe 100%);
+            --success-gradient: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            --warning-gradient: linear-gradient(135deg, #87ceeb 0%, #4a90e2 100%);
+            --dark-gradient: linear-gradient(135deg, #2c3e50 0%, #4a90e2 100%);
+            --light-bg: #f0f8ff;
+            --card-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            --hover-shadow: 0 20px 40px rgba(0,0,0,0.15);
+            --border-radius: 12px;
+            --sidebar-width: 300px;
+        }
+
+        * {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        body {
+            background: linear-gradient(135deg, #f0f8ff 0%, #e6f3ff 100%);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            min-height: 100vh;
+            color: #000000;
+        }
+
+        /* General text colors for light mode */
+        h1, h2, h3, h4, h5, h6, p, span, div, label {
+            color: #000000;
+        }
+
+        .sidebar {
+            height: 100vh;
+            background: var(--primary-gradient);
+            color: #000000;
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: var(--sidebar-width);
+            overflow-y: auto;
+            box-shadow: var(--card-shadow);
+            backdrop-filter: blur(10px);
+        }
+
+        .sidebar::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .sidebar::-webkit-scrollbar-track {
+            background: rgba(255,255,255,0.1);
+        }
+
+        .sidebar::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.3);
+            border-radius: 3px;
+        }
+
+        .main-content {
+            margin-left: var(--sidebar-width);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .navbar {
+            background: rgba(255,255,255,0.95) !important;
+            backdrop-filter: blur(15px);
+            border: none !important;
+            box-shadow: 0 2px 20px rgba(0,0,0,0.1);
+            border-radius: var(--border-radius);
+            margin-bottom: 20px;
+        }
+
+        .navbar .navbar-brand,
+        .navbar .nav-link,
+        .navbar .dropdown-toggle {
+            color: #000000 !important;
+        }
+
+        .card {
+            border: none;
+            border-radius: var(--border-radius);
+            box-shadow: var(--card-shadow);
+            backdrop-filter: blur(10px);
+            background: rgba(255,255,255,0.95);
+            transition: all 0.3s ease;
+        }
+
+        .card:hover {
+            box-shadow: var(--hover-shadow);
+            transform: translateY(-2px);
+        }
+
+        .card-header {
+            background: var(--success-gradient) !important;
+            color: white !important;
+            border: none !important;
+            border-radius: var(--border-radius) var(--border-radius) 0 0 !important;
+            padding: 15px 20px;
+        }
+
+        .connection-card {
+            border: none;
+            border-radius: var(--border-radius);
+            background: rgba(255,255,255,0.9);
+            box-shadow: var(--card-shadow);
+            transition: all 0.3s ease;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .connection-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: var(--secondary-gradient);
+        }
+
+        .connection-card:hover {
+            transform: translateY(-5px) scale(1.02);
+            box-shadow: var(--hover-shadow);
+        }
+
+        .btn {
+            border-radius: 8px;
+            font-weight: 500;
+            border: none;
+            padding: 8px 16px;
+            transition: all 0.3s ease;
+        }
+
+        .btn-primary {
+            background: var(--primary-gradient);
+            border: none;
+        }
+
+        .btn-primary:hover {
+            background: var(--dark-gradient);
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-success {
+            background: var(--success-gradient);
+            border: none;
+        }
+
+        .btn-success:hover {
+            background: var(--warning-gradient);
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(79, 172, 254, 0.4);
+        }
+
+        .btn-info {
+            background: var(--secondary-gradient);
+            border: none;
+            color: white;
+        }
+
+        .btn-info:hover {
+            background: var(--primary-gradient);
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(135, 206, 235, 0.4);
+        }
+
+        .btn-outline-secondary {
+            border: 2px solid #e9ecef;
+            color: #6c757d;
+            background: rgba(255,255,255,0.8);
+        }
+
+        .btn-outline-secondary:hover {
+            background: var(--secondary-gradient);
+            border-color: transparent;
+            color: white;
+            transform: translateY(-2px);
+        }
+
+        .query-editor {
+            border-radius: var(--border-radius);
+            border: 2px solid #e9ecef;
+            overflow: hidden;
+            background: white;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+            transition: all 0.3s ease;
+        }
+
+        .query-editor:focus-within {
+            border-color: #4a90e2;
+            box-shadow: 0 4px 20px rgba(74, 144, 226, 0.15);
+        }
+
+        .CodeMirror {
+            border-radius: var(--border-radius);
+            font-family: 'Fira Code', 'Monaco', 'Consolas', monospace;
+            line-height: 1.6;
+            height: 400px;
+            border: none;
+        }
+
+        .results-table {
+            max-height: 500px;
+            overflow: auto;
+            border-radius: var(--border-radius);
+            border: 1px solid #e9ecef;
+        }
+
+        .table {
+            margin-bottom: 0;
+        }
+
+        .table thead th {
+            background: var(--dark-gradient) !important;
+            color: white !important;
+            border: none !important;
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        .table tbody tr:hover {
+            background: rgba(135, 206, 235, 0.1) !important;
+            transform: scale(1.01);
+        }
+
+        .table tbody td {
+            color: #000000 !important;
+            background: white;
+        }
+
+        .database-tree {
+            background: rgba(255,255,255,0.1);
+            border-radius: var(--border-radius);
+            padding: 20px 15px;
+            margin-top: 20px;
+            backdrop-filter: blur(5px);
+        }
+
+        .tree-item {
+            padding: 12px 16px;
+            margin: 4px 0;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: rgba(255,255,255,0.05);
+        }
+
+        .tree-item:hover {
+            background: rgba(255,255,255,0.2);
+            transform: translateX(5px);
+        }
+
+        .tree-item.active {
+            background: rgba(255,255,255,0.3);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+
+        .database-item {
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .table-item {
+            font-size: 13px;
+            margin-left: 20px;
+            background: rgba(255,255,255,0.05);
+        }
+
+        /* Sidebar text colors for light mode */
+        .sidebar h5,
+        .sidebar .text-light,
+        .sidebar .btn,
+        .sidebar .tree-item,
+        .sidebar .database-item,
+        .sidebar .table-item {
+            color: #000000 !important;
+        }
+
+        .alert {
+            border: none;
+            border-radius: var(--border-radius);
+            backdrop-filter: blur(10px);
+        }
+
+        .alert-success {
+            background: linear-gradient(135deg, rgba(79, 172, 254, 0.1) 0%, rgba(0, 242, 254, 0.1) 100%);
+            border-left: 4px solid #4facfe;
+            color: #0f5132;
+        }
+
+        .alert-danger {
+            background: linear-gradient(135deg, rgba(245, 87, 108, 0.1) 0%, rgba(240, 147, 251, 0.1) 100%);
+            border-left: 4px solid #f5576c;
+            color: #842029;
+        }
+
+        .alert-warning {
+            background: linear-gradient(135deg, rgba(135, 206, 235, 0.1) 0%, rgba(74, 144, 226, 0.1) 100%);
+            border-left: 4px solid #4a90e2;
+            color: #1e3a8a;
+        }
+
+        .form-control, .form-select {
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            padding: 10px 15px;
+            transition: all 0.3s ease;
+            background: rgba(255,255,255,0.9);
+        }
+
+        .form-control:focus, .form-select:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+            background: white;
+        }
+
+        .badge {
+            border-radius: 20px;
+            padding: 6px 12px;
+            font-weight: 500;
+        }
+
+        .bg-warning {
+            background: linear-gradient(135deg, #87ceeb 0%, #4a90e2 100%) !important;
+            color: white !important;
+        }
+
+        .bg-info {
+            background: linear-gradient(135deg, #87ceeb 0%, #4a90e2 100%) !important;
+            color: white !important;
+        }
+
+        .text-info {
+            color: #4a90e2 !important;
+        }
+
+        .modal-content {
+            border: none;
+            border-radius: var(--border-radius);
+            box-shadow: var(--hover-shadow);
+            backdrop-filter: blur(15px);
+        }
+
+        .modal-header {
+            background: var(--primary-gradient);
+            color: white;
+            border: none;
+            border-radius: var(--border-radius) var(--border-radius) 0 0;
+        }
+
+        .form-check-input:checked {
+            background-color: #667eea;
+            border-color: #667eea;
+        }
+
+        .dropdown-menu {
+            border: none;
+            border-radius: var(--border-radius);
+            box-shadow: var(--card-shadow);
+            backdrop-filter: blur(10px);
+            background: rgba(255,255,255,0.95);
+        }
+
+        .dropdown-item:hover {
+            background: var(--success-gradient);
+            color: white;
+            border-radius: 6px;
+            margin: 2px 4px;
+        }
+
+        /* Loading animation */
+        .spinner-border {
+            animation: spinner-border 0.75s linear infinite;
+        }
+
+        /* Smooth animations */
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .card, .alert {
+            animation: fadeInUp 0.6s ease;
+        }
+
+        /* Custom scrollbar */
+        .results-table::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        .results-table::-webkit-scrollbar-track {
+            background: #f1f3f4;
+            border-radius: 4px;
+        }
+
+        .results-table::-webkit-scrollbar-thumb {
+            background: var(--primary-gradient);
+            border-radius: 4px;
+        }
+
+        .results-table::-webkit-scrollbar-thumb:hover {
+            background: var(--dark-gradient);
+        }
+
+        /* Header styling */
+        h1, h2, h3, h4, h5, h6 {
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        /* Welcome message styling */
+        .welcome-card {
+            background: var(--primary-gradient);
+            color: white;
+            text-align: center;
+            padding: 40px 20px;
+        }
+
+        .welcome-card h3 {
+            color: white;
+            margin-bottom: 20px;
+        }
+
+        /* Responsive design */
+        @media (max-width: 768px) {
+            .sidebar {
+                transform: translateX(-100%);
+                z-index: 1000;
+            }
+            
+            .sidebar.show {
+                transform: translateX(0);
+            }
+            
+            .main-content {
+                margin-left: 0;
+                padding: 10px;
+            }
+        }
+
+        /* Dark Theme */
+        .dark-theme {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%) !important;
+        }
+
+        .dark-theme .card {
+            background: rgba(30, 30, 50, 0.95) !important;
+            color: #e0e0e0;
+        }
+
+        .dark-theme .navbar {
+            background: rgba(30, 30, 50, 0.95) !important;
+            color: #e0e0e0;
+        }
+
+        .dark-theme .navbar .navbar-brand,
+        .dark-theme .navbar .nav-link,
+        .dark-theme .navbar .dropdown-toggle {
+            color: #ffffff !important;
+        }
+
+        .dark-theme .sidebar {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        }
+
+        /* Dark mode sidebar text colors */
+        .dark-theme .sidebar h5,
+        .dark-theme .sidebar .text-light,
+        .dark-theme .sidebar .btn,
+        .dark-theme .sidebar .tree-item,
+        .dark-theme .sidebar .database-item,
+        .dark-theme .sidebar .table-item {
+            color: #ffffff !important;
+        }
+
+        .dark-theme .form-control,
+        .dark-theme .form-select {
+            background: rgba(50, 50, 70, 0.8);
+            border-color: #4a4a6a;
+            color: #e0e0e0;
+        }
+
+        .dark-theme .form-control:focus,
+        .dark-theme .form-select:focus {
+            background: rgba(60, 60, 80, 0.9);
+            border-color: #667eea;
+            color: #e0e0e0;
+        }
+
+        .dark-theme .table thead th {
+            background: linear-gradient(135deg, #2c3e50 0%, #1a1a2e 100%) !important;
+        }
+
+        .dark-theme .table tbody tr {
+            background: rgba(40, 40, 60, 0.5);
+            color: #ffffff;
+        }
+
+        .dark-theme .table tbody td {
+            color: #ffffff !important;
+            background: rgba(40, 40, 60, 0.5);
+        }
+
+        .dark-theme .table tbody tr:hover {
+            background: rgba(135, 206, 235, 0.2) !important;
+        }
+
+        .dark-theme .dropdown-menu {
+            background: rgba(30, 30, 50, 0.95);
+            border: 1px solid #4a4a6a;
+        }
+
+        .dark-theme .dropdown-item {
+            color: #e0e0e0;
+        }
+
+        .dark-theme .dropdown-item:hover {
+            background: var(--primary-gradient);
+            color: white;
+        }
+
+        .dark-theme .modal-content {
+            background: rgba(30, 30, 50, 0.95);
+            color: #e0e0e0;
+        }
+
+        .dark-theme .CodeMirror {
+            background: rgba(40, 40, 60, 0.9) !important;
+            color: #e0e0e0 !important;
+        }
+
+        .dark-theme h1, 
+        .dark-theme h2, 
+        .dark-theme h3, 
+        .dark-theme h4, 
+        .dark-theme h5, 
+        .dark-theme h6,
+        .dark-theme p,
+        .dark-theme label,
+        .dark-theme span,
+        .dark-theme div {
+            color: #ffffff !important;
+        }
+        .dark-theme h6 {
+            color: #e0e0e0;
+        }
+
+        .dark-theme .text-muted {
+            color: #b0b0b0 !important;
+        }
+
+        .dark-theme .welcome-card {
+            background: var(--dark-gradient);
+        }
+    </style>
+</head>
+<body>
+    <!-- Sidebar -->
+    <div class="sidebar p-3">
+        <div class="d-flex align-items-center mb-4">
+            <i class="bi bi-database-fill fs-2 me-3"></i>
+            <div>
+                <h4 class="mb-0">SQL Editor</h4>
+                <small class="text-light">Welcome, <%= user.username %></small>
+            </div>
+        </div>
+
+        <!-- Connections Section -->
+        <div class="mb-4">
+            <h6 class="text-uppercase text-light mb-3">
+                <i class="bi bi-plug me-2"></i>Connections
+            </h6>
+            <button class="btn btn-light btn-sm w-100 mb-3" id="addConnectionBtn">
+                <i class="bi bi-plus-circle me-2"></i>Add Connection
+            </button>
+            <div id="connectionsList">
+                <!-- Connections will be loaded here -->
+            </div>
+        </div>
+
+        <!-- Database Tree -->
+        <div class="database-tree" id="databaseTree" style="display: none;">
+            <h6 class="text-light mb-3">
+                <i class="bi bi-diagram-3 me-2"></i>Database Structure
+            </h6>
+            <div id="treeContent">
+                <!-- Tree content will be loaded here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <!-- Navigation -->
+        <nav class="navbar navbar-expand-lg navbar-light bg-light">
+            <div class="container-fluid">
+                <span class="navbar-brand mb-0 h1">
+                    <i class="bi bi-terminal me-2"></i>SQL Query Editor
+                </span>
+                <div class="navbar-nav ms-auto">
+                    <div class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                            <i class="bi bi-person-circle me-1"></i><%= user.username %>
+                        </a>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="#" id="themeToggle">
+                                <i class="bi bi-moon me-2"></i>Dark Mode
+                            </a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="#" id="queryHistoryBtn">
+                                <i class="bi bi-clock-history me-2"></i>Query History
+                            </a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="#" id="logoutBtn">
+                                <i class="bi bi-box-arrow-right me-2"></i>Logout
+                            </a></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Main Content Area -->
+        <div class="container-fluid p-4">
+            <!-- Welcome Message -->
+            <div id="welcomeMessage" class="text-center py-5">
+                <div class="card welcome-card">
+                    <div class="card-body">
+                        <i class="bi bi-database display-1 mb-4" style="font-size: 4rem;"></i>
+                        <h2 class="mb-3">Welcome to SQL Editor</h2>
+                        <p class="mb-4 opacity-75">Powerful web-based database management tool for MariaDB/MySQL and PostgreSQL</p>
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-4">
+                                <div class="d-flex align-items-center justify-content-center">
+                                    <i class="bi bi-shield-check fs-3 me-2 opacity-75"></i>
+                                    <span>Secure</span>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="d-flex align-items-center justify-content-center">
+                                    <i class="bi bi-lightning fs-3 me-2 opacity-75"></i>
+                                    <span>Fast</span>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="d-flex align-items-center justify-content-center">
+                                    <i class="bi bi-eye-slash fs-3 me-2 opacity-75"></i>
+                                    <span>Privacy Protected</span>
+                                </div>
+                            </div>
+                        </div>
+                        <button class="btn btn-light btn-lg px-4 py-3" id="getStartedBtn" style="border-radius: 30px; font-weight: 600;">
+                            <i class="bi bi-plus-circle me-2"></i>Add Your First Connection
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Query Interface -->
+            <div id="queryInterface" style="display: none;">
+                <div class="row">
+                    <div class="col-12">
+                        <div class="card mb-4">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <h5 class="mb-0">
+                                    <i class="bi bi-code-square me-2"></i>SQL Query Editor
+                                </h5>
+                                <div class="d-flex align-items-center justify-content-between">
+                                    <div class="d-flex align-items-center gap-3">
+                                        <select class="form-select form-select-sm" id="databaseSelector" style="width: auto; display: none;">
+                                            <option value="">Select Database</option>
+                                        </select>
+                                        <small class="text-muted" id="currentDatabaseIndicator" style="display: none;">
+                                            Database: <span id="currentDatabaseName"></span>
+                                        </small>
+                                    </div>
+                                    <div class="d-flex align-items-center gap-3">
+                                        <div class="form-check form-switch">
+                                            <input class="form-check-input" type="checkbox" id="dataMaskingToggle" checked>
+                                            <label class="form-check-label small" for="dataMaskingToggle">
+                                                <i class="bi bi-eye-slash me-1"></i>Mask sensitive data
+                                            </label>
+                                        </div>
+                                        <div class="btn-group" role="group">
+                                            <button class="btn btn-success btn-sm" id="executeQueryBtn">
+                                                <i class="bi bi-play-circle me-1"></i>Execute
+                                            </button>
+                                            <button class="btn btn-outline-secondary btn-sm" id="clearQueryBtn">
+                                                <i class="bi bi-trash me-1"></i>Clear
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div id="queryEditor"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Query Results -->
+                <div id="queryResults" style="display: none;">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0">
+                                <i class="bi bi-table me-2"></i>Query Results
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="resultsContent">
+                                <!-- Results will be displayed here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Connection Modal -->
+    <div class="modal fade" id="connectionModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add Database Connection</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="connectionForm">
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="connectionName" class="form-label">Connection Name</label>
+                                <input type="text" class="form-control" id="connectionName" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="databaseType" class="form-label">Database Type</label>
+                                <select class="form-select" id="databaseType" required>
+                                    <option value="">Select type...</option>
+                                    <option value="mysql">MariaDB/MySQL</option>
+                                    <option value="postgresql">PostgreSQL</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="row mb-3">
+                            <div class="col-md-8">
+                                <label for="host" class="form-label">Host</label>
+                                <input type="text" class="form-control" id="host" value="localhost" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="port" class="form-label">Port</label>
+                                <input type="number" class="form-control" id="port">
+                            </div>
+                        </div>
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="username" class="form-label">Username</label>
+                                <input type="text" class="form-control" id="username" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="password" class="form-label">Password</label>
+                                <input type="password" class="form-control" id="password">
+                            </div>
+                        </div>
+                        <div class="row mb-3">
+                            <div class="col-md-8">
+                                <label for="database" class="form-label">Database (Optional)</label>
+                                <input type="text" class="form-control" id="database">
+                            </div>
+                            <div class="col-md-4">
+                                <div class="form-check mt-4">
+                                    <input class="form-check-input" type="checkbox" id="ssl">
+                                    <label class="form-check-label" for="ssl">
+                                        Use SSL
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                    
+                    <!-- Alert container for modal -->
+                    <div id="modalAlertContainer"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-info" id="testConnectionBtn">Test Connection</button>
+                    <button type="button" class="btn btn-primary" id="saveConnectionBtn">Save Connection</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Query History Modal -->
+    <div class="modal fade" id="historyModal" tabindex="-1">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Query History</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="historyContent">
+                        <!-- History will be loaded here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.13/lib/codemirror.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.13/mode/sql/sql.min.js"></script>
+    <script src="/js/dashboard.js"></script>
+</body>
+</html>
