@@ -4,7 +4,7 @@ SQL Editor adalah aplikasi web untuk mengelola database MariaDB/MySQL dan Postgr
 
 ## Demo Screenshots
 
-### Query Editor & Results
+### Query Editor & Results Masking PII 
 ![Login Interface](public/images/gambar1.png)
 
 ### Request and Approval
