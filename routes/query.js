@@ -10,18 +10,15 @@ function maskSensitiveData(data, fields) {
   
   // Define sensitive column patterns
   const sensitivePatterns = [
-    /nama/i,
     /name/i,
     /email/i,
     /phone/i,
-    /telepon/i,
     /hp/i,
     /password/i,
     /pass/i,
     /token/i,
     /secret/i,
     /key/i,
-    /nik/i,
     /ktp/i,
     /passport/i,
     /credit_card/i,
